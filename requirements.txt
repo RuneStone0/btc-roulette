@@ -1,0 +1,4 @@
+requests
+bip32utils
+Mnemonic
+bitcoinlib
