@@ -1,2 +1,10 @@
-/venv
-/.vscode
+# Python local environment
+venv
+__pycache__
+
+# local environment user, pass, ip address...etc
+.env
+
+#practice files
+*practice*
+
