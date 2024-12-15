@@ -5,6 +5,7 @@ fire
 # Electrum Stuff
 connectrum
 mnemonic
+pycoin
 
 bitcoin
 base58
