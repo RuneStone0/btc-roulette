@@ -13,13 +13,14 @@ class ElectrumQuery:
         self.protocol = protocol
         self.client = None
         self.logger = logging.getLogger(__name__)
+        self.loop = asyncio.get_event_loop()
 
     async def _resolve_dns(self):
         if self.server_url in self._dns_cache:
             return self._dns_cache[self.server_url]
         
         try:
-            info = await asyncio.get_event_loop().getaddrinfo(
+            info = await self.loop.getaddrinfo(
                 self.server_url, self.port,
                 family=socket.AF_INET,
                 proto=socket.IPPROTO_TCP,
@@ -50,24 +51,28 @@ class ElectrumQuery:
                 self.client.close()
 
     def get_address_balance(self, address):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(
+            return self.loop.run_until_complete(
                 self._get_balance_async('blockchain.address.get_balance', address)
             )
-        finally:
-            loop.close()
+        except asyncio.InvalidStateError as e:
+            self.logger.error(f"Invalid state error: {e}, address: {address}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error: {e}, address: {address}")
+            return None
 
     def get_scripthash_balance(self, scripthash):
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
         try:
-            return loop.run_until_complete(
+            return self.loop.run_until_complete(
                 self._get_balance_async('blockchain.scripthash.get_balance', scripthash)
             )
-        finally:
-            loop.close()
+        except asyncio.InvalidStateError as e:
+            self.logger.error(f"Invalid state error: {e}, scripthash: {scripthash}")
+            return None
+        except Exception as e:
+            self.logger.error(f"Unexpected error: {e}, scripthash: {scripthash}")
+            return None
 
     def close(self):
         if self.client:
