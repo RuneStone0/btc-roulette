@@ -1,4 +1,10 @@
-requests
-bip32utils
-Mnemonic
-bitcoinlib
+# general
+load_dotenv
+fire
+
+# Electrum Stuff
+connectrum
+mnemonic
+
+bitcoin
+base58

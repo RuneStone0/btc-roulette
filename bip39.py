@@ -1,3 +1,5 @@
+import hashlib
+import base58
 from typing import Dict
 import mnemonic
 import bitcoin
@@ -19,6 +21,20 @@ class Bip39AddressGenerator:
             self.seed_phrase = self.mnemo.generate(strength=128)
             
         self.seed = self.mnemo.to_seed(self.seed_phrase)
+
+    def compute_scripthash(self, address):
+        # Decode the address using Base58Check
+        decoded = base58.b58decode_check(address)
+        pubkeyhash = decoded[1:]  # Remove version byte
+
+        # Build the P2PKH locking script
+        script = b'\x76\xa9\x14' + pubkeyhash + b'\x88\xac'
+
+        # Compute the SHA256 hash and reverse it
+        sha256_hash = hashlib.sha256(script).digest()
+        reversed_hash = sha256_hash[::-1]  # Reverse endianness
+
+        return reversed_hash.hex()
 
     def generate_address(self, account: int = 0, change: int = 0, address_index: int = 0) -> Dict[str, str]:
         """Generate Bitcoin address from seed using BIP44 derivation path.
@@ -47,6 +63,7 @@ class Bip39AddressGenerator:
             "seed_phrase": self.seed_phrase,
             "address": address,
             "derivation_path": f"m/44'/0'/{account}'{change}/{address_index}",
+            "scripthash": self.compute_scripthash(address)
         }
 
 if __name__ == "__main__":
