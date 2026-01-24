@@ -1,6 +1,7 @@
 # general
 load_dotenv
 fire
+requests
 
 # Electrum Stuff
 connectrum

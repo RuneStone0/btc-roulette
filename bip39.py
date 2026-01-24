@@ -79,7 +79,7 @@ class AddressQueue:
     def __init__(self, queue_size=100):
         self.queue = Queue(maxsize=queue_size)
         self.stop_event = Event()
-        self.executor = ThreadPoolExecutor(max_workers=1)
+        self.executor = ThreadPoolExecutor(max_workers=4)  # Fixed: match number of threads
         self.logger = log
         self._start_generating()
 

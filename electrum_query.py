@@ -13,7 +13,8 @@ class ElectrumQuery:
         self.protocol = protocol
         self.client = None
         self.logger = logging.getLogger(__name__)
-        self.loop = asyncio.get_event_loop()
+        self.loop = None
+        self._loop_owner = False
 
     async def _resolve_dns(self):
         if self.server_url in self._dns_cache:
@@ -33,30 +34,73 @@ class ElectrumQuery:
             self.logger.error(f"DNS resolution failed for {self.server_url} - {str(e)}")
         return None
 
-    async def _get_balance_async(self, method, param):
+    async def _ensure_connected(self):
+        """Ensure client is connected, reconnect if needed."""
+        if self.client and hasattr(self.client, 'is_connected') and self.client.is_connected():
+            return True
+        
         try:
             ip = await self._resolve_dns()
             if not ip:
-                return None
+                return False
+            
+            if self.client:
+                self.client.close()
             
             self.client = StratumClient()
             self.svr = ServerInfo(self.server_url, ip, ports=(self.protocol + str(self.port)))
             await self.client.connect(self.svr, disable_cert_verify=True)
-            return await self.client.RPC(method, param)
+            return True
         except Exception as e:
             self.logger.error(f"Error connecting to {self.server_url}:{self.port} - {str(e)}")
-            return None
-        finally:
             if self.client:
                 self.client.close()
+                self.client = None
+            return False
+
+    async def _get_balance_async(self, method, param):
+        """Get balance asynchronously, reusing connection if available."""
+        if not await self._ensure_connected():
+            return None
+        
+        try:
+            return await self.client.RPC(method, param)
+        except Exception as e:
+            self.logger.error(f"Error in RPC call to {self.server_url}:{self.port} - {str(e)}")
+            # Mark connection as invalid, will reconnect on next call
+            if self.client:
+                try:
+                    self.client.close()
+                except:
+                    pass
+                self.client = None
+            return None
+
+    def _get_or_create_loop(self):
+        """Get or create an event loop for this instance."""
+        if self.loop is None or self.loop.is_closed():
+            try:
+                self.loop = asyncio.get_event_loop()
+                if self.loop.is_closed():
+                    raise RuntimeError("Event loop is closed")
+                self._loop_owner = False
+            except RuntimeError:
+                # No event loop in current thread, create one
+                self.loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(self.loop)
+                self._loop_owner = True
+        return self.loop
 
     def get_address_balance(self, address):
         try:
-            return self.loop.run_until_complete(
+            loop = self._get_or_create_loop()
+            return loop.run_until_complete(
                 self._get_balance_async('blockchain.address.get_balance', address)
             )
         except asyncio.InvalidStateError as e:
             self.logger.error(f"Invalid state error: {e}, address: {address}")
+            # Reset loop on invalid state
+            self.loop = None
             return None
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}, address: {address}")
@@ -64,19 +108,35 @@ class ElectrumQuery:
 
     def get_scripthash_balance(self, scripthash):
         try:
-            return self.loop.run_until_complete(
+            loop = self._get_or_create_loop()
+            return loop.run_until_complete(
                 self._get_balance_async('blockchain.scripthash.get_balance', scripthash)
             )
         except asyncio.InvalidStateError as e:
             self.logger.error(f"Invalid state error: {e}, scripthash: {scripthash}")
+            # Reset loop on invalid state
+            self.loop = None
             return None
         except Exception as e:
             self.logger.error(f"Unexpected error: {e}, scripthash: {scripthash}")
             return None
 
     def close(self):
+        """Close connection and clean up resources."""
         if self.client:
-            self.client.close()
+            try:
+                self.client.close()
+            except:
+                pass
+            self.client = None
+        # Clean up event loop if we created it
+        if self._loop_owner and self.loop and not self.loop.is_closed():
+            try:
+                self.loop.close()
+            except:
+                pass
+            self.loop = None
+            self._loop_owner = False
 
 if __name__ == "__main__":
     client = ElectrumQuery()
